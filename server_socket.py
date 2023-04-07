@@ -213,7 +213,7 @@ class BTCPServerSocket(BTCPSocket):
         segment[8:10] = checksum_bytes
         return segment
 
-
+blablabla
     def _closed_segment_received(self, segment):
         """Helper method handling received segment in CLOSED state
         """
