@@ -30,3 +30,9 @@ HEADER_SIZE, PAYLOAD_SIZE, SEGMENT_SIZE:
 HEADER_SIZE = 10
 PAYLOAD_SIZE = 1008
 SEGMENT_SIZE = HEADER_SIZE + PAYLOAD_SIZE
+
+"""
+MAX_SEQ_NUM
+    Maximally possible sequence number size that fits in 2 Bytes
+"""
+MAX_SEQ_NUM = 65535

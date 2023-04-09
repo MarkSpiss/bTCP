@@ -130,34 +130,38 @@ class BTCPServerSocket(BTCPSocket):
         # raise NotImplementedError("Only rudimentary implementation of lossy_layer_segment_received present. Read the comments & code of server_socket.py, then remove the NotImplementedError.")
         
         # TODO:
-        # 1) Verify checksum
-        checksum_correct = BTCPSocket.verify_checksum(segment)
+
         # ? What do we do if the checksum is incorrect?
 
         # 2) Parse the segment header
-        segment_header = segment[:10]
+        segment_header = segment[:HEADER_SIZE]
         seq_num, ack_num, flag_s, flag_a, flag_f, window_size, data_length, checksum = BTCPSocket.unpack_segment_header(segment_header)
 
         # 3) Extract the data (based on data length from the header)
         # What about the Byte order? Is it relevant for extracting the data?
-        segment_data = segment[10:data_length]
+        segment_data = segment[HEADER_SIZE:data_length]
 
 
         # match ... case is available since Python 3.10
         # Note, this is *not* the same as a "switch" statement from other
         # languages. There is no "fallthrough" behaviour, so no breaks.
-        match self._state:
-            case BTCPStates.CLOSED:
-                self._closed_segment_received(segment)
-            case BTCPStates.CLOSING:
-                self._closing_segment_received(segment)
-            case BTCPStates.ESTABLISHED:
-                self._established_segment_received(segment)
-            case _:
-                self._other_segment_received(segment)
+        
+        # 1) Verify the checksum
+        checksum_correct = BTCPSocket.verify_checksum(segment)
+        
+        if(checksum_correct):
+            match self._state:
+                case BTCPStates.CLOSED:
+                    self._closed_segment_received(segment)
+                case BTCPStates.CLOSING:
+                    self._closing_segment_received(segment)
+                case BTCPStates.ESTABLISHED:
+                    self._established_segment_received(segment)
+                case _:
+                    self._other_segment_received(segment)
 
-        self._expire_timers()
-        return
+            self._expire_timers()
+            return
 
     def _established_segment_received(self, segment):
         """Helper method handling received segment in ESTABLISHED state
@@ -168,39 +172,39 @@ class BTCPServerSocket(BTCPSocket):
             - Answer to FIN with FIN/ACK
         """
 
-        segment_header = segment[:10]
+        segment_header = segment[:HEADER_SIZE]
         seq_num, ack_num, flag_s, flag_a, flag_f, window_size, data_length, checksum = BTCPSocket.unpack_segment_header(segment_header)
 
         # Checking that the segment that is received has expected sequence number (last ACKed segment + 1)
-        if seq_num == (self._last_seq_num + 1):
+        if seq_num == (self._seq_increment(self._last_seq_num)):
             # (in order) FIN segment received
             if flag_f == 1:
                 # Send FIN|ACK segment
-                self._last_seq_num += 1
+                self._last_seq_num = self._seq_increment(self._last_seq_num)
                 # TODO: We should also compute the checksum for ACK packets that are being sent
                 ack_header = BTCPSocket.build_segment_header(self._last_seq_num, self._last_seq_num, ack_set=True, fin_set=True)
-                ack_body = b'\x00' * 1008
+                ack_body = b'\x00' * PAYLOAD_SIZE
                 ack_segment = ack_header + ack_body
                 self._lossy_layer.send_segment(self._compute_set_checksum(ack_segment))
                 # Change state to Closing
                 self._state = BTCPStates.CLOSING
             # (in order) data segment received
             else:
-                segment_data = segment[10:data_length]
+                segment_data = segment[HEADER_SIZE:data_length]
                 # In which Byte order data curently is? Do I need to unpack it?
                 self._recvbuf.put(segment_data)
                 # Increment the sequence number
-                self._last_seq_num += 1
+                self._last_seq_num = self._seq_increment(self._last_seq_num)
                 # Send an ACK for the accepted packet
                 ack_header = BTCPSocket.build_segment_header(self._last_seq_num, self._last_seq_num, ack_set=True)
-                ack_body = b'\x00' * 1008
+                ack_body = b'\x00' * PAYLOAD_SIZE
                 ack_segment = ack_header + ack_body
                 # Send the segment with the computed checksum
                 self._lossy_layer.send_segment(self._compute_set_checksum(ack_segment))
         else:
             # Send ACK for last received sequence number
             ack_header = BTCPSocket.build_segment_header(self._last_seq_num, self._last_seq_num, ack_set=True)
-            ack_body = b'\x00' * 1008
+            ack_body = b'\x00' * PAYLOAD_SIZE
             ack_segment = ack_header + ack_body
             self._lossy_layer.send_segment(self._compute_set_checksum(ack_segment))
 
@@ -210,7 +214,7 @@ class BTCPServerSocket(BTCPSocket):
     def _compute_set_checksum(self, segment):
         checksum = BTCPSocket.in_cksum(segment)
         checksum_bytes = struct.pack("!H", checksum)
-        segment[8:10] = checksum_bytes
+        segment[8:HEADER_SIZE] = checksum_bytes
         return segment
 
     def _closed_segment_received(self, segment):
@@ -287,6 +291,13 @@ class BTCPServerSocket(BTCPSocket):
         self._start_example_timer()
         self._expire_timers()
         raise NotImplementedError("No implementation of lossy_layer_tick present. Read the comments & code of server_socket.py.")
+    
+    def _seq_increment(self, seq_num):
+        if seq_num >= MAX_SEQ_NUM:
+            seq_num = 0
+        else:
+            seq_num += 1
+        return seq_num
 
 
     # The following two functions show you how you could implement a (fairly
@@ -366,7 +377,7 @@ class BTCPServerSocket(BTCPSocket):
         this project.
         """
         logger.debug("accept called")
-        raise NotImplementedError("No implementation of accept present. Read the comments & code of server_socket.py.")
+        # raise NotImplementedError("No implementation of accept present. Read the comments & code of server_socket.py.")
 
 
     def recv(self):
@@ -401,7 +412,7 @@ class BTCPServerSocket(BTCPSocket):
         Again, you should feel free to deviate from how this usually works.
         """
         logger.debug("recv called")
-        raise NotImplementedError("Only rudimentary implementation of recv present. Read the comments & code of server_socket.py, then remove the NotImplementedError.")
+        # raise NotImplementedError("Only rudimentary implementation of recv present. Read the comments & code of server_socket.py, then remove the NotImplementedError.")
 
         # Rudimentary example implementation:
         # Empty the queue in a loop, reading into a larger bytearray object.
