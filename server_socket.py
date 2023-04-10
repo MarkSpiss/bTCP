@@ -176,16 +176,16 @@ class BTCPServerSocket(BTCPSocket):
         seq_num, ack_num, flag_s, flag_a, flag_f, window_size, data_length, checksum = BTCPSocket.unpack_segment_header(segment_header)
 
         # Checking that the segment that is received has expected sequence number (last ACKed segment + 1)
-        if seq_num == (self._seq_increment(self._last_seq_num)):
+        if seq_num == (BTCPSocket.seq_num_increment(self._last_seq_num)):
             # (in order) FIN segment received
             if flag_f == 1:
                 # Send FIN|ACK segment
-                self._last_seq_num = self._seq_increment(self._last_seq_num)
+                self._last_seq_num = BTCPSocket.seq_num_increment(self._last_seq_num)
                 # TODO: We should also compute the checksum for ACK packets that are being sent
                 ack_header = BTCPSocket.build_segment_header(self._last_seq_num, self._last_seq_num, ack_set=True, fin_set=True)
                 ack_body = b'\x00' * PAYLOAD_SIZE
                 ack_segment = ack_header + ack_body
-                self._lossy_layer.send_segment(self._compute_set_checksum(ack_segment))
+                self._lossy_layer.send_segment(BTCPSocket.compute_set_checksum(ack_segment))
                 # Change state to Closing
                 self._state = BTCPStates.CLOSING
             # (in order) data segment received
@@ -194,28 +194,22 @@ class BTCPServerSocket(BTCPSocket):
                 # In which Byte order data curently is? Do I need to unpack it?
                 self._recvbuf.put(segment_data)
                 # Increment the sequence number
-                self._last_seq_num = self._seq_increment(self._last_seq_num)
+                self._last_seq_num = BTCPSocket.seq_num_increment(self._last_seq_num)
                 # Send an ACK for the accepted packet
                 ack_header = BTCPSocket.build_segment_header(self._last_seq_num, self._last_seq_num, ack_set=True)
                 ack_body = b'\x00' * PAYLOAD_SIZE
                 ack_segment = ack_header + ack_body
                 # Send the segment with the computed checksum
-                self._lossy_layer.send_segment(self._compute_set_checksum(ack_segment))
+                self._lossy_layer.send_segment(BTCPSocket.compute_and_set_checksum(ack_segment))
         else:
             # Send ACK for last received sequence number
             ack_header = BTCPSocket.build_segment_header(self._last_seq_num, self._last_seq_num, ack_set=True)
             ack_body = b'\x00' * PAYLOAD_SIZE
             ack_segment = ack_header + ack_body
-            self._lossy_layer.send_segment(self._compute_set_checksum(ack_segment))
+            self._lossy_layer.send_segment(BTCPSocket.compute_set_checksum(ack_segment))
 
-    # TODO: Test whether this works correctly
-    # Computes the checksum of a given segment (should initially be 0) and sets the computed value
-    # for checksum field
-    def _compute_set_checksum(self, segment):
-        checksum = BTCPSocket.in_cksum(segment)
-        checksum_bytes = struct.pack("!H", checksum)
-        segment[8:HEADER_SIZE] = checksum_bytes
-        return segment
+            
+
 
     def _closed_segment_received(self, segment):
         """Helper method handling received segment in CLOSED state
@@ -292,12 +286,7 @@ class BTCPServerSocket(BTCPSocket):
         self._expire_timers()
         raise NotImplementedError("No implementation of lossy_layer_tick present. Read the comments & code of server_socket.py.")
     
-    def _seq_increment(self, seq_num):
-        if seq_num >= MAX_SEQ_NUM:
-            seq_num = 0
-        else:
-            seq_num += 1
-        return seq_num
+
 
 
     # The following two functions show you how you could implement a (fairly
@@ -377,6 +366,7 @@ class BTCPServerSocket(BTCPSocket):
         this project.
         """
         logger.debug("accept called")
+        self._state = BTCPStates.ESTABLISHED
         # raise NotImplementedError("No implementation of accept present. Read the comments & code of server_socket.py.")
 
 

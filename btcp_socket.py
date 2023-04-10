@@ -1,6 +1,7 @@
 import struct
 import logging
 from enum import IntEnum
+from constants import *
 
 
 logger = logging.getLogger(__name__)
@@ -169,7 +170,7 @@ class BTCPSocket:
         Mind that you change *what* signals that to the correct value(s).
         """
         logger.debug("verify_cksum() called")
-        segment_header = segment[:10]
+        segment_header = segment[:HEADER_SIZE]
 
         # 1) Extract the checksum
         _, _, _, _, _, _, _, extracted_checksum = BTCPSocket.unpack_segment_header(segment_header)
@@ -185,3 +186,21 @@ class BTCPSocket:
 
         # raise NotImplementedError("No implementation of in_cksum present. Read the comments & code of btcp_socket.py.")
         # return BTCPSocket.in_cksum(segment) == 0xABCD
+
+    # TODO: Test whether this works correctly
+    # Computes the checksum of a given segment (should initially be 0) and sets the computed value
+    # for checksum field
+    @staticmethod
+    def compute_and_set_checksum(segment):
+        checksum = BTCPSocket.in_cksum(segment)
+        checksum_bytes = struct.pack("!H", checksum)
+        segment[8:HEADER_SIZE] = checksum_bytes
+        return segment
+
+    @staticmethod
+    def seq_num_increment(seq_num):
+        if seq_num == MAX_SEQ_NUM:
+            seq_num = 0
+        else:
+            seq_num += 1
+        return seq_num
