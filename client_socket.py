@@ -120,13 +120,102 @@ class BTCPClientSocket(BTCPSocket):
 
         self._expire_timers()
         return
-        raise NotImplementedError("No implementation of lossy_layer_segment_received present. Read the comments & code of client_socket.py.")
-    
+        # raise NotImplementedError("No implementation of lossy_layer_segment_received present. Read the comments & code of client_socket.py.")
+
     # ack = seqnr if prev seg was received correctly (by server)
-    # def _established_segment_received(self, segment_header, checksum, seqnr, ack):
-        # if ack == seqnr:
-            # make ack available for reuse again?
-            # increase 
+    def _established_segment_received(self, segment):
+        """Helper method handling received segment in ESTABLISHED state
+        In this state we:
+            - Send (in-order) segments
+            - with unique sequence numbers 
+            - given a window size N, advocated by server side
+            - Transfer to closing state after sending FIN
+        """
+        segment_header = segment[:HEADER_SIZE] # use header_size instead of a const
+        seq_y, ack_x, flag_s, flag_a, flag_f, N, data_length, checksum = BTCPSocket.unpack_segment_header(segment_header)
+        
+        sent_not_acked_segs = []
+        sent_not_acked_acks = []
+
+        if flag_s and flag_a:
+            seqnum = ack_x   # seq_num_x = ack_x
+            acknum = seq_y+1 # ack_num_y = seq_y + 1 
+
+            # check if ack is for any of our sent segments
+            for index, a in sent_not_acked_segs:
+                if a == ack_num_y:
+                    sent_not_acked_acks.get(a, False, None)
+                    sent_not_acked_segs.get()
+                    continue
+
+            while sent_not_acked_acks < N: #get SIZE of sent_not_acked_acks tho
+                try:
+                    # from lossy_layer_tick
+                    logger.debug("Getting chunk from buffer.")
+                    chunk = self._sendbuf.get_nowait()
+                    datalen = len(chunk)
+                    logger.debug("Got chunk with lenght %i:",
+                                    datalen)
+                    logger.debug(chunk)
+                    if datalen < PAYLOAD_SIZE:
+                        logger.debug("Padding chunk to full size")
+                        chunk = chunk + b'\x00' * (PAYLOAD_SIZE - datalen)
+                    logger.debug("Building segment from chunk.")
+                    segment = (self.build_segment_header(seq_num_x, ack_num_y, True, True, False, N, length=datalen)
+                                + chunk)
+                    logger.info("Sending segment.")
+                    self._lossy_layer.send_segment(segment)
+
+                    # own additions
+                    sent_not_acked_segs.put(chunk, False, None)
+                    sent_not_acked_acks.put(seq_num_x, False, None)
+                    seq_num_x += 1
+                    
+                except queue.Empty:
+                    logger.info("No (more) data was available for sending right now.")
+
+
+
+            
+
+        """
+        try:
+            sent_not_acked = []
+            buffered_not_sent = []
+            sent_count = 0
+
+            while ACK and sent_count < N: # count_sent_segm < N
+                seq_num = ack_x
+                ack_num = seq_y
+                # copy-pasted from lossy_layer_tick
+                logger.debug("Getting chunk from buffer.")
+                chunk = self._sendbuf.get_nowait()
+                datalen = len(chunk)
+                logger.debug("Got chunk with lenght %i:",
+                             datalen)
+                logger.debug(chunk)
+                if datalen < PAYLOAD_SIZE:
+                    logger.debug("Padding chunk to full size")
+                    chunk = chunk + b'\x00' * (PAYLOAD_SIZE - datalen)
+                logger.debug("Building segment from chunk.")
+                # def build_segment_header(seqnum, acknum,
+                #              syn_set=False, ack_set=False, fin_set=False,
+                #              window=0x01, length=0, checksum=0):
+                segment = (self.build_segment_header(0, 0, length=datalen)
+                           + chunk)
+                logger.info("Sending segment.")
+                self._lossy_layer.send_segment(segment)
+
+                # own additions
+                sent_count += 1
+                sent_not_acked.put()
+                ack_x += 1
+                
+
+        except queue.Empty:
+            logger.info("No (more) data was available for sending right now.")
+        """
+
 
     def lossy_layer_tick(self):
         """Called by the lossy layer whenever no segment has arrived for
@@ -153,7 +242,7 @@ class BTCPClientSocket(BTCPSocket):
         lossy_layer_segment_received or lossy_layer_tick.
         """
         logger.debug("lossy_layer_tick called")
-        raise NotImplementedError("Only rudimentary implementation of lossy_layer_tick present. Read the comments & code of client_socket.py, then remove the NotImplementedError.")
+        # raise NotImplementedError("Only rudimentary implementation of lossy_layer_tick present. Read the comments & code of client_socket.py, then remove the NotImplementedError.")
 
         # Actually send all chunks available for sending.
         # Relies on an eventual exception to break from the loop when no data
@@ -231,6 +320,7 @@ class BTCPClientSocket(BTCPSocket):
         this project.
         """
         logger.debug("connect called")
+        self._state = BTCPStates.ESTABLISHED
         # raise NotImplementedError("No implementation of connect present. Read the comments & code of client_socket.py.")
 
 
