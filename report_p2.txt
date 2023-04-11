@@ -1,24 +1,29 @@
-Timeout and retries functionality
+3-way handshake for establishing and termination connection missing implementation
+We did not have time get around (trying to) implement(ing) these functionalities. 
+Because of this, we chose to set our initial sequence numbers for client and server socket to a fixed number. 
+
+Timeout and retries missing implementation
 Unfortunately we did not have a basic working implementation in time, so we did not implement timeouts yet either. 
-If we were to incorporate them, we would have done so like the following:
-
-BTCPStates = CLOSED, ACCEPTING, SYN_SENT, SYN_RCVD, ESTABLISHED, FIN_SENT, CLOSING
-
 To implement the timout and retries functionality, we would need to add the following:
-For the btcp socket:
-- variable for the timeout constant
 
-For the client:
-- a counter for number of retries
-- to _window_queue : currently it stores tuples of (int seq_num, Bool is_acked, segment).
-  To implement the timeout, we would add an extra member to the tuple, storing the time at which the segment was sent. 
-  For the most accurate send/t time, we want to store the time when the segment is actually sent; not when the segment is simply added to our _window_queue.
-- check if there are any segment(s) that have exceeded their timeout without being ack'ed, 
-  - if found, from the segment that is the earliest in the window queue upto (incl.) all next segments in the window queue 
+1. To the constants class:
+1.1 constant time variable for timeout value, e.g. 1000ms. For simplicity, we would use this timeout value for both connection establishment and termination.
+1.2 constant integer variable for maximum number of retries, e.g. 5.
 
-
-Pseudocode for the case for the client when it is in its SYN_SENT state: 
-def _syn_sent_segment_received(self, segment):
-    if 
-
-
+2. To the client socket:
+2.1 a counter for the number of retries
+2.2 to _window_queue : currently it stores tuples of the form (int seq_num, Bool is_acked, segment).
+  To implement the timeout, we would add a fourth member to the tuple storing the time at which the segment was sent. 
+  For the most accurate sent time, we want to store the time when the segment is actually sent through the lossy layer; not when the segment is added to the client's local _window_queue.
+2.3 check if there is a segment that has exceeded their timeout without being ack'ed, 
+  2.3.1 if so, check if we are still allowed to retransmit segments (i.e. number of retries < max number of retries):
+      2.3.1.1 if so, then:
+        - if established state: in client socket, retransmit all segments from the earliest segment in the window queue that has a timeout to all other (next) segments in the window queue (both inclusive),
+        and increase the retries counter.
+        - if syn_sent state: in client socket, regenerate random sequence number and send it again as a (valid) segment.
+        - if fin_sent state: retransmit the (FIN) segment. 
+      2.3.1.2 otherwise,
+        - if established state: in client socket, stop trying to transmit data, transition to closed stat.
+        - if syn_sent state: in client socket, stop trying to establish a connection and change to closed state.
+        - if fin_sent state (NB this also applies to when ACK maybe was received, but FIN has not been received within timeout limit): in client socket, transition to closed state.
+2.4 otherwise, no timeout handling needed.
