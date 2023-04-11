@@ -128,7 +128,8 @@ class BTCPClientSocket(BTCPSocket):
         # raise NotImplementedError("No implementation of lossy_layer_segment_received present. Read the comments & code of client_socket.py.")
 
     def _closing_segment_received(self, segment):
-        self._lossy_layer_
+        # self._lossy_layer_
+        i = 0
         
 
     # ack = seqnr if prev seg was received correctly (by server)

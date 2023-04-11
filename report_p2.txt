@@ -1,0 +1,21 @@
+Timeout and retries functionality
+Unfortunately we did not have a basic working implementation in time, so we did not implement timeouts yet either. 
+If we were to incorporate them, we would have done so like the following:
+
+BTCPStates = CLOSED, ACCEPTING, SYN_SENT, SYN_RCVD, ESTABLISHED, FIN_SENT, CLOSING
+
+To implement the timout and retries functionality, we would need to add the following:
+For the client:
+- a counter for number of retries
+- to _window_queue : currently it stores tuples of (int seq_num, Bool is_acked, segment).
+  To implement the timeout, we would add an extra member to the tuple, storing the time at which the segment was sent. 
+  For the most accurate send/t time, we want to store the time when the segment is actually sent; not when the segment is simply added to our _window_queue.
+- check for any segment(s) that have exceeded their timeout without being ack'ed.
+- 
+
+
+Pseudocode for the case for the client when it is in its SYN_SENT state: 
+def _syn_sent_segment_received(self, segment):
+    if 
+
+

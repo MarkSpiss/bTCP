@@ -1,0 +1,71 @@
+Mark Špīss s1024217
+Lien Wullink s1005601
+
+1) "How we did it" things: GBN - motivation, explanation of implementation (queue data structure is used for keeping track of the current window, ...)
+2) What did we still miss regarding methods from 1)
+3) Why we miss it (where we had struggles)
+4) "How we could do it" things: timeout, num of retries, 3-way handshake for establishing and terminating connection, (re)scaling, communicating resized window size (server side), 
+
+First of all, we have not managed to get to the working version of the bTCP protocol and therefore could not 
+test it.
+However, we think that the code which we have at the moment could and will provide reliable data transfer
+in the established state (wihout SYN and FIN handshakes) with some adjustments and some additional code.
+
+1.
+Deisgn choices and explanation:
+
+GBN RELIABLE DATA TRANSFER PROTOCOL
+
+GBN reliable data transfer protocol was chosen because it is easier to implement: it is not required to buffer any 
+out-of-order packets on the receiver side. Retransmit mechanism on the sender side is also simpler: resend all segments
+within the current window. 
+
+Explanation of our GBN implementation:
+Server (receiver) side:
+    - We keep track of the sequence number (_last_seq_num) of the last (in-order) correctly received segment (the segment
+    is then immediately put to the _recvbuf to be delivered to the application later on and ACK for that segment is sent).
+
+    Then, if next segment that has been received has the next sequence number (_last_seq_num + 1), we put the segment into recv buffer
+    and safely increment (safely means wrapping sequence number to 0 when it gets to the maximum value that can be stored using 2 Bytes (65535)) 
+     _last_seq_num by 1 and send an ACK (so that next in-order segment can be accepted).
+    Otherwise, if the segment is out of order it is discarded and ACK is sent for the last segment that was received and delivered correctly (_last_seq_num)
+
+Client (sender) side:
+    - On the client side, we have to keep track of the current window of segments that have been/are going to be sent. 
+    For keeping track of the current window, we decided to use a queue. Elements of this queue are 3-tuples that contain
+    all necessary information about the segment: (int: Sequence number, bool: is ACKed or not, bytes: segment)
+
+    Queue was chosen for implementing the current window for several reasons: 
+        - easy to use with window_size (queue size is set to be the window size. That way, no more than window_size elements can be
+        in the queue, so no more than window_size elements can be sent). Although it has some potential drawbacks: if window size changes dynamically,
+        new queue with corresponding max_size needs to be created, with all elements from the previous queue copied to the new queue.
+        - easy to advance the window (move the base). When first element in the queue has been ACKed, we can simply pop it from the queue (with all
+        consequent elements that also have been ACKed) thus allowing more segments to be put in the queue and sent to the receiver. 
+    
+    Here is a description of how it should work:
+        After the initial handshake sender knows the desired window size and creates a queue of such size. 
+        Then, while queue is not full the client sends as many segments as they can (getting the data from _sendbuf) 
+        and fills the queue with 3-tuples containing data about those segments: (seq_num, False, segment). Then it waits for ACKs.
+        When ACK is received, we loop through the queue, searching for a seq_num which is equal to ack_num, and ACK the corresponding segment
+        (by changing the boolean value of 3-tuple to True.) 
+        After that, we immediately check whether the window can be advanced by first checking whether the base (first element of the queue)
+        has been ACKed already. If so, we pop it from the queue, move to the next element and perform the same check. If the segment has not
+        been ACKed yet, we know that we cannot advance the window any further and we stop. After advancing the window, we cand send more segments,
+        until the queue is full again. 
+
+    What still needs to be implemented:
+        Timer which triggers retransmission of all segments within the current window queue. 
+
+GBN should provide following parts of the reliable data transfer:
+    - Handles segment loss
+    - Handles segment reordering
+    - Handles segment duplication
+
+
+CHECKSUM
+Checksum is computed for every segment that is being sent/received.
+# TODO: impelemnt this? If the checksum happens to be incorrect, the segment is discarded and ACK of the last
+correctly received segment is sent 
+
+Checksum should provide following parts of the reliable data transfer:
+    - Handling corruption
