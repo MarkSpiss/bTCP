@@ -1,0 +1,122 @@
+# Mark Špīss s1024217
+# Lien Wullink s1005601
+Python version: 3.10.8
+--------------------------------------------------
+Table of Contents
+--------------------------------------------------
+Introduction
+Section 1: Design choices and explanation: which parts work and which parts fail
+Section 2: Missing implementations
+Section 3: Evaluation
+--------------------------------------------------
+Introduction
+--------------------------------------------------
+First of all, we have not managed to get to the working version of the bTCP protocol and therefore could not 
+test it.
+However, we think that the code which we have at the moment could and will provide reliable data transfer
+in the established state (wihout SYN and FIN handshakes) with some adjustments and some additional code.
+--------------------------------------------------
+Section 1: Design choices and explanation
+--------------------------------------------------
+GBN RELIABLE DATA TRANSFER PROTOCOL
+
+GBN reliable data transfer protocol was chosen because it is easier to implement: it is not required to buffer any 
+out-of-order packets on the receiver side. Retransmit mechanism on the sender side is also simpler: resend all segments
+within the current window. 
+
+Explanation of our GBN implementation:
+Server (receiver) side:
+    - We keep track of the sequence number (_last_seq_num) of the last (in-order) correctly received segment (the segment
+    is then immediately put to the _recvbuf to be delivered to the application later on and ACK for that segment is sent).
+
+    Then, if next segment that has been received has the next sequence number (_last_seq_num + 1), we put the segment into recv buffer
+    and safely increment (safely means wrapping sequence number to 0 when it gets to the maximum value that can be stored using 2 Bytes (65535)) 
+     _last_seq_num by 1 and send an ACK (so that next in-order segment can be accepted).
+    Otherwise, if the segment is out of order it is discarded and ACK is sent for the last segment that was received and delivered correctly (_last_seq_num)
+
+Client (sender) side:
+    - On the client side, we have to keep track of the current window of segments that have been/are going to be sent. 
+    For keeping track of the current window, we decided to use a queue. Elements of this queue are 3-tuples that contain
+    all necessary information about the segment: (int: Sequence number, bool: is ACKed or not, bytes: segment)
+
+    Queue was chosen for implementing the current window for several reasons: 
+        - easy to use with window_size (queue size is set to be the window size. That way, no more than window_size elements can be
+        in the queue, so no more than window_size elements can be sent). Although it has some potential drawbacks: if window size changes dynamically,
+        new queue with corresponding max_size needs to be created, with all elements from the previous queue copied to the new queue.
+        - easy to advance the window (move the base). When first element in the queue has been ACKed, we can simply pop it from the queue (with all
+        consequent elements that also have been ACKed) thus allowing more segments to be put in the queue and sent to the receiver. 
+    
+    Here is a description of how it should work:
+        After the initial handshake sender knows the desired window size and creates a queue of such size. 
+        Then, while queue is not full the client sends as many segments as they can (getting the data from _sendbuf) 
+        and fills the queue with 3-tuples containing data about those segments: (seq_num, False, segment). Then it waits for ACKs.
+        When ACK is received, we loop through the queue, searching for a seq_num which is equal to ack_num, and ACK the corresponding segment
+        (by changing the boolean value of 3-tuple to True.) 
+        After that, we immediately advance the window by popping all elements up to (and including) the 'furthest' ACKed segment in the window.
+        That works because we know for sure that if some segment has been ACKed, that implies that all segments that were sent before were also received
+        correclty even if they are still unACKed (ACK could be lost). After advancing the window, we cand send more segments until the queue is full again. 
+
+    What still needs to be implemented:
+        Timer which triggers retransmission of all segments within the current window queue. 
+
+GBN should provide following parts of the reliable data transfer:
+    - Handles segment loss
+    - Handles segment reordering
+    - Handles segment duplication
+
+CHECKSUM
+Checksum is computed for every segment that is being sent/received.
+But for some reason it seems that the checksum is never verified correctly.
+
+Checksum should provide following parts of the reliable data transfer:
+    - Handling corruption
+--------------------------------------------------
+Section 2: Missing implementations
+--------------------------------------------------
+3-way handshake for establishing and termination connection missing implementation
+We did not have time get around (trying to) implement(ing) these functionalities. 
+Because of this, we chose to set our initial sequence numbers for client and server socket to a fixed number. 
+
+Timeout and retries missing implementation
+Unfortunately we did not have a basic working implementation in time, so we did not implement timeouts yet either. 
+To implement the timout and retries functionality, we would need to add the following:
+
+1. To the constants class:
+1.1 constant time variable for timeout value, e.g. 1000ms. For simplicity, we would use this timeout value for both connection establishment and termination.
+1.2 constant integer variable for maximum number of retries, e.g. 5.
+
+2. To the client socket:
+2.1 a counter for the number of retries
+2.2 to _window_queue : currently it stores tuples of the form (int seq_num, Bool is_acked, segment).
+  To implement the timeout, we would add a fourth member to the tuple storing the time at which the segment was sent. 
+  For the most accurate sent time, we want to store the time when the segment is actually sent through the lossy layer; not when the segment is added to the client's local _window_queue.
+2.3 check if there is a segment that has exceeded their timeout without being ack'ed, 
+  2.3.1 if so, check if we are still allowed to retransmit segments (i.e. number of retries < max number of retries):
+      2.3.1.1 if so, then:
+        - if established state: in client socket, retransmit all segments from the earliest segment in the window queue that has a timeout to all other (next) segments in the window queue (both inclusive),
+        and increase the retries counter.
+        - if syn_sent state: in client socket, regenerate random sequence number and send it again as a (valid) segment.
+        - if fin_sent state: retransmit the (FIN) segment. 
+      2.3.1.2 otherwise,
+        - if established state: in client socket, stop trying to transmit data, transition to closed stat.
+        - if syn_sent state: in client socket, stop trying to establish a connection and change to closed state.
+        - if fin_sent state (NB this also applies to when ACK maybe was received, but FIN has not been received within timeout limit): in client socket, transition to closed state.
+2.4 otherwise, no timeout handling needed.
+
+--------------------------------------------------
+Section 3: Evaluation
+--------------------------------------------------
+Even though the basic functionality works (sending segments until the queue is full on sender side,
+receiving segments and putting them into output) if certain parts of the code are removed (e.g. verifying the checksum),
+we are still missing big parts of the project (handshake, connection termination, synchronizing sequence numbers, 
+sending ACKs using correct sequence numbers so that window_queue can move...) and we are upset about it.
+
+Our main obstacle was starting too late with coding. Because of that, we simply did not have enough time for fixing all the bugs and
+finishing the code. We did not work on the project during any of the practical sessions, because we were focusing on passing the weekly assignments.
+
+However, only if we had started on time, we think that we would be able to finish and deliver (completely) functional bTCP project. 
+In the future, we will try to avoid making this mistake again.
+
+Lastly, we were struggling with the reliable data transfer implementation way more than we had anticipated. 
+Because we wanted to be able to test any other implementation if we were to implement them, we really wanted to successfully implement the rdt part first. 
+Due to this choice in priority, we have regrettably not gotten to any other parts. 
