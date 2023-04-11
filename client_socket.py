@@ -168,6 +168,14 @@ class BTCPClientSocket(BTCPSocket):
 
 
     def _ack_window_segment(self, window_queue, ack_num):
+        """Called when ACK was received. Marks corresponding segment (
+        for which the ACK was received) as ACKed in the current window (winodw_queue)
+        and advances the window correspondingly when possible:
+
+        - Removes all segmets up to furthest ACKed segment in the window
+        (because that implies that they have also been received and ACKed already)
+        """
+
         window_list = list(window_queue.queue)
         window_queue_copy = queue.Queue(maxsize=window_queue.maxsize)
         target = None

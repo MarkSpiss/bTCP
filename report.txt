@@ -48,10 +48,9 @@ Client (sender) side:
         and fills the queue with 3-tuples containing data about those segments: (seq_num, False, segment). Then it waits for ACKs.
         When ACK is received, we loop through the queue, searching for a seq_num which is equal to ack_num, and ACK the corresponding segment
         (by changing the boolean value of 3-tuple to True.) 
-        After that, we immediately check whether the window can be advanced by first checking whether the base (first element of the queue)
-        has been ACKed already. If so, we pop it from the queue, move to the next element and perform the same check. If the segment has not
-        been ACKed yet, we know that we cannot advance the window any further and we stop. After advancing the window, we cand send more segments,
-        until the queue is full again. 
+        After that, we immediately advance the window by popping all elements up to (and including) the 'furthest' ACKed segment in the window.
+        That works because we know for sure that if some segment has been ACKed, that implies that all segments that were sent before were also received
+        correclty even if they are still unACKed (ACK could be lost). After advancing the window, we cand send more segments until the queue is full again. 
 
     What still needs to be implemented:
         Timer which triggers retransmission of all segments within the current window queue. 
