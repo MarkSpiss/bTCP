@@ -5,6 +5,8 @@ If we were to incorporate them, we would have done so like the following:
 BTCPStates = CLOSED, ACCEPTING, SYN_SENT, SYN_RCVD, ESTABLISHED, FIN_SENT, CLOSING
 
 To implement the timout and retries functionality, we would need to add the following:
+For the btcp socket:
+- variable for the timeout constant
 For the client:
 - a counter for number of retries
 - to _window_queue : currently it stores tuples of (int seq_num, Bool is_acked, segment).

@@ -127,7 +127,13 @@ class BTCPClientSocket(BTCPSocket):
         return
         # raise NotImplementedError("No implementation of lossy_layer_segment_received present. Read the comments & code of client_socket.py.")
 
+    def _closed_segment_received(self, segment):
+        #TODO
+        i = 0
+
+
     def _closing_segment_received(self, segment):
+        # TODO
         # self._lossy_layer_
         i = 0
         
@@ -164,10 +170,18 @@ class BTCPClientSocket(BTCPSocket):
     def _ack_window_segment(self, window_queue, ack_num):
         window_list = list(window_queue.queue)
         window_queue_copy = queue.Queue(maxsize=window_queue.maxsize)
+        target = None
+
         for tuple in window_list:
             if tuple[0] == ack_num:
                 tuple = (tuple[0], True, tuple[2])
+                target = tuple
             window_queue_copy.put(tuple)
+
+        if target is not None:
+            while(target!= window_queue_copy.get()):
+                pass
+
         return window_queue_copy
 
     def _advance_window(self, window_queue):
