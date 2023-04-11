@@ -1,3 +1,6 @@
+# Mark Špīss s1024217
+# Lien Wullink s1005601
+
 """
 TIMER_TICK:
     timer tick in milliseconds; how much time is allowed to pass with no

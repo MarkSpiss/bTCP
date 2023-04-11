@@ -1,7 +1,10 @@
+# Mark Špīss s1024217
+# Lien Wullink s1005601
+
 import struct
 import logging
 from enum import IntEnum
-from constants import *
+from btcp.constants import *
 
 
 logger = logging.getLogger(__name__)
@@ -29,7 +32,6 @@ class BTCPStates(IntEnum):
     FIN_SENT    = 5
     CLOSING     = 6
     __          = 7 # If you need more states, extend the Enum like this.
-    # raise NotImplementedError("Check btcp_socket.py's BTCPStates enum. We left out some states you will need.")
 
 
 class BTCPSignals(IntEnum):
@@ -97,28 +99,14 @@ class BTCPSocket:
         than make a separate method for every individual field.
         """
 
-        # Struct.unpack is needed here because Network byte order (big endian) is important
-        """"
-        seq_num = header[:2]
-        ack_num = header[2:4]
-        bundled_flags = header[4]
-        flag_S = 
-        flag_A = 
-        flag_F = 
-        window_size = header[5]
-        data_length = header[6:8]
-        checksum = header[8:10]
-        """
 
         logger.debug("unpack_segment_header() called")
-        # raise NotImplementedError("No implementation of unpack_segment_header present. Read the comments & code of btcp_socket.py. You should really implement the packing / unpacking of the header into field values before doing anything else!")
         bundled_flags = header[4]
         flag_s = (bundled_flags & 0x04) >> 2
         flag_a = (bundled_flags & 0x02) >> 1
         flag_f = (bundled_flags & 0x01)
         
-        # Q: Where will flags S, A, F end up if I unpack them using struct.unpack?
-        # A:
+
         seq_num, ack_num, _, window_size, data_length, checksum = struct.unpack("!HHBBHH", header)
 
         logger.debug("unpack_segment_header() done")
@@ -140,10 +128,6 @@ class BTCPSocket:
         segment_header = segment[:10]
         _, _, _, _, _, _, _, checksum = BTCPSocket.unpack_segment_header(segment_header)
 
-        # Q: What to do if initially the checksum is not equal to 0x0000 Do we need to check for it here?
-
-        # Q: Do we return only computed checksum or the whole segment with checksum set here?
-
         wordsum = 0x0000
 
         for word in struct.iter_unpack("!H", segment):
@@ -160,8 +144,6 @@ class BTCPSocket:
                 checksum = wordsum
 
         return checksum
-    
-        # raise NotImplementedError("No implementation of in_cksum present. Read the comments & code of btcp_socket.py.")
 
     @staticmethod
     def verify_checksum(segment):
@@ -171,31 +153,34 @@ class BTCPSocket:
         """
         logger.debug("verify_cksum() called")
         segment_header = segment[:HEADER_SIZE]
+        
 
         # 1) Extract the checksum
-        _, _, _, _, _, _, _, extracted_checksum = BTCPSocket.unpack_segment_header(segment_header)
+        seq_num, ack_num, flag_s, flag_a, flag_f, window_size, data_length, extracted_checksum = BTCPSocket.unpack_segment_header(segment_header)
 
         # 2) Set checksum field to 0x0000 and recompute the checksum
         # (the checksum is located in Bytes 8,9 of segment)
-        segment[8] = 0x00
-        segment[9] = 0x00
-        recomputed_checksum = BTCPSocket.in_cksum(segment)
+        header_zero_checksum = BTCPSocket.build_segment_header(seq_num, ack_num, syn_set=flag_s, ack_set=flag_a, fin_set=flag_f, window=window_size, length=data_length, checksum=0)
+        segment_data = segment[HEADER_SIZE:PAYLOAD_SIZE]
+
+        zero_segment = header_zero_checksum + segment_data
+
+        recomputed_checksum = BTCPSocket.in_cksum(zero_segment)
 
         # 3) Compare
+        logger.debug("verify_cksum() done")
         return recomputed_checksum == extracted_checksum
 
-        # raise NotImplementedError("No implementation of in_cksum present. Read the comments & code of btcp_socket.py.")
-        # return BTCPSocket.in_cksum(segment) == 0xABCD
-
-    # TODO: Test whether this works correctly
     # Computes the checksum of a given segment (should initially be 0) and sets the computed value
     # for checksum field
     @staticmethod
     def compute_and_set_checksum(segment):
         checksum = BTCPSocket.in_cksum(segment)
         checksum_bytes = struct.pack("!H", checksum)
-        segment[8:HEADER_SIZE] = checksum_bytes
-        return segment
+        segment_list = list(segment)
+        segment_list[8:HEADER_SIZE] = checksum_bytes
+        segment_bytes = bytearray(segment_list)
+        return segment_bytes
 
     @staticmethod
     def seq_num_increment(seq_num):

@@ -1,6 +1,10 @@
-from btcp_socket import BTCPSocket, BTCPStates
-from lossy_layer import LossyLayer
-from constants import *
+# Mark Špīss s1024217
+# Lien Wullink s1005601
+
+import time
+from btcp.btcp_socket import BTCPSocket, BTCPStates
+from btcp.lossy_layer import LossyLayer
+from btcp.constants import *
 
 import random
 import queue
@@ -50,8 +54,13 @@ class BTCPClientSocket(BTCPSocket):
         self._sendbuf = queue.Queue(maxsize=1000)
         logger.info("Socket initialized with sendbuf size 1000")
         # Dictionary for keeping track of sent segments
-        self._next_sequence_number = random.randint(0, MAX_SEQ_NUM)
-        self._window_queue = queue.Queue(maxsize=window)
+        self._next_sequence_number = 1 #random.randint(0, MAX_SEQ_NUM)
+
+        # Window queue for keeping track of the current window
+        self._window_queue = queue.Queue(maxsize=100)
+
+        # Make sure the example timer exists from the start.
+        self._example_timer = None
 
 
 
@@ -66,6 +75,31 @@ class BTCPClientSocket(BTCPSocket):
     ### Of course you can implement this using any helper methods you want  ###
     ### to add.                                                             ###
     ###########################################################################
+    # The following two functions show you how you could implement a (fairly
+    # inaccurate) but easy-to-use timer.
+    # You *do* have to call _expire_timers() from *both* lossy_layer_tick
+    # and lossy_layer_segment_received, for reasons explained in
+    # lossy_layer_tick.
+
+    def _start_example_timer(self):
+        if not self._example_timer:
+            logger.debug("Starting example timer.")
+            # Time in *nano*seconds, not milli- or microseconds.
+            # Using a monotonic clock ensures independence of weird stuff
+            # like leap seconds and timezone changes.
+            self._example_timer = time.monotonic_ns()
+        else:
+            logger.debug("Example timer already running.")
+
+    def _expire_timers(self):
+        curtime = time.monotonic_ns()
+        if not self._example_timer:
+            logger.debug("Example timer not running.")
+        elif curtime - self._example_timer > self._timeout * 1_000_000:
+            logger.debug("Example timer elapsed.")
+            self._example_timer = None
+        else:
+            logger.debug("Example timer not yet elapsed.")
 
     # handles acks etc it receives from server as reply to what client has sent to server
     def lossy_layer_segment_received(self, segment):
@@ -108,9 +142,7 @@ class BTCPClientSocket(BTCPSocket):
         each elif.
         """
         logger.debug("lossy_layer_segment_received called")
-        segment_header = segment[:HEADER_SIZE]
-        seq_num, ack_num, flag_s, flag_a, flag_f, window_size, data_length, checksum = BTCPSocket.unpack_segment_header(segment_header)
-        
+
         # checksum verifcation
         if BTCPSocket.verify_checksum(segment): 
             match self._state:
@@ -121,11 +153,10 @@ class BTCPClientSocket(BTCPSocket):
                 case BTCPStates.ESTABLISHED:
                     self._established_segment_received(segment)
                 case _:
-                    self._other_segment_received(segment)
+                    pass
 
         self._expire_timers()
         return
-        # raise NotImplementedError("No implementation of lossy_layer_segment_received present. Read the comments & code of client_socket.py.")
 
     def _closed_segment_received(self, segment):
         #TODO
@@ -148,21 +179,14 @@ class BTCPClientSocket(BTCPSocket):
             - given a window size N, advocated by server side
             - Transfer to closing state after sending FIN
         """
-        segment_header = segment[:HEADER_SIZE] # use header_size instead of a const
-        seq_num, ack_num, flag_s, flag_a, flag_f, window_size, data_length, checksum = BTCPSocket.unpack_segment_header(segment_header)
-        # window_queue = queue.Queue(maxsize=window_size)        
-
-        # first segment after 3-way handshake was successfull?
-        # TODO: if flag_s and flag_a: 
-        # TODO : case where client never received a confirmation from server that establishment connection was succesfull
+        segment_header = segment[:HEADER_SIZE] 
+        seq_num, ack_num, flag_s, flag_a, flag_f, window_size, data_length, checksum = BTCPSocket.unpack_segment_header(segment_header)     
 
         # ACK segment received
-        if flag_a and not flag_s:              
+        if flag_a == 1 and not flag_s == 1:              
             # send as many segments as possible within window size
             self._ack_window_segment(self._window_queue, ack_num)
-            self._advance_window(self._window_queue)
             self._send_available_data
-                # but could also have been an exception because of the put.nowait() instead of the get_nowait()
 
             # wait for an ACK so we can send more segments
 
@@ -175,6 +199,7 @@ class BTCPClientSocket(BTCPSocket):
         - Removes all segmets up to furthest ACKed segment in the window
         (because that implies that they have also been received and ACKed already)
         """
+        logger.debug("_ack_window_segment called")
 
         window_list = list(window_queue.queue)
         window_queue_copy = queue.Queue(maxsize=window_queue.maxsize)
@@ -187,25 +212,14 @@ class BTCPClientSocket(BTCPSocket):
             window_queue_copy.put(tuple)
 
         if target is not None:
+            logger.debug("_ack_window_segment window advancing called")
             while(target!= window_queue_copy.get()):
                 pass
+            logger.debug("_ack_window_segment finished")
 
+        logger.debug("_ack_window_segment done")
         return window_queue_copy
-
-    def _advance_window(self, window_queue):
-        """Called to advance the given window queue, which contains 3-tuples
-        of format el = (seq_num, bool:ACKed (True) or unACKed (False), segment)
-        """
-        window_list = list(window_queue.queue)
-
-        for tuple in window_list:
-            if tuple[1] is True:
-                window_queue.get()
-            else:
-                break
-        return window_queue
     
-
     def _current_window_size_available(self, window_queue):
         """Get the amount of free spots in the window queue
         """
@@ -237,7 +251,6 @@ class BTCPClientSocket(BTCPSocket):
         lossy_layer_segment_received or lossy_layer_tick.
         """
         logger.debug("lossy_layer_tick called")
-        # raise NotImplementedError("Only rudimentary implementation of lossy_layer_tick present. Read the comments & code of client_socket.py, then remove the NotImplementedError.")
 
         # Actually send all chunks available for sending.
         # Relies on an eventual exception to break from the loop when no data
@@ -262,7 +275,7 @@ class BTCPClientSocket(BTCPSocket):
                 segment = (self.build_segment_header(self._next_sequence_number, 0, length=datalen)
                            + chunk)
                 segment = BTCPSocket.compute_and_set_checksum(segment)
-                # TODO: Careful, queue should not be full if window_size is communicated correctly (or no race-condition occur)
+                
                 self._window_queue.put((self._next_sequence_number, False, segment))
                 logger.info("Sending segment.")
                 self._lossy_layer.send_segment(segment)
@@ -352,7 +365,6 @@ class BTCPClientSocket(BTCPSocket):
         done later.
         """
         logger.debug("send called")
-        # raise NotImplementedError("Only rudimentary implementation of send present. Read the comments & code of client_socket.py, then remove the NotImplementedError.")
 
         # Example with a finite buffer: a queue with at most 1000 chunks,
         # for a maximum of 985KiB data buffered to get turned into packets.
@@ -396,7 +408,6 @@ class BTCPClientSocket(BTCPSocket):
         logger.debug("shutdown called")
         self._state = BTCPStates.CLOSING
         self._established_segment_received(self)
-        # raise NotImplementedError("No implementation of shutdown present. Read the comments & code of client_socket.py.")
 
 
     def close(self):

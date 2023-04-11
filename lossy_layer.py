@@ -1,3 +1,6 @@
+# Mark Špīss s1024217
+# Lien Wullink s1005601
+
 """
 Students should NOT need to modify any code in this file!
 
@@ -14,7 +17,7 @@ from _thread import interrupt_main
 
 import logging
 
-from constants import *
+from btcp.constants import *
 
 
 logger = logging.getLogger(__name__)
